@@ -1,7 +1,8 @@
 # 環境変数
-USER:=isucon
-IP:=ec2-3-112-56-103.ap-northeast-1.compute.amazonaws.com
-KEY_FILE:=~/.ssh/r-pc-win.pem
+USER:=root
+IP:=localhost
+KEY_FILE:=~/.ssh/id_ed25519
+PORT:=2222
 
 # 変数
 alp_matching_group = ''
@@ -15,17 +16,17 @@ setup:
 	mkdir access_log_alp
 
 ssh:
-	ssh -i ${KEY_FILE} ${SERVER} 
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 
 
 log-all: log-pull log-rm
 
 log-pull:
-	ssh -i ${KEY_FILE} ${SERVER} \
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} \
 		'sudo cp /var/log/nginx/access.log /tmp && sudo chmod 666 /tmp/access.log'
-	scp -i ${KEY_FILE} ${SERVER}:/tmp/access.log ./access_log/${time}.log
+	scp -i ${KEY_FILE} -p ${PORT} ${SERVER}:/tmp/access.log ./access_log/${time}.log
 
 log-rm:
-	ssh -i ${KEY_FILE} ${SERVER} \
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} \
 		': | sudo tee /var/log/nginx/access.log'
 
 latest_log:=$(shell ls access_log | sort -r | head -n 1)
