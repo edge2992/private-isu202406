@@ -1,8 +1,8 @@
 # 環境変数
-USER:=root
-IP:=localhost
-KEY_FILE:=~/.ssh/id_ed25519
-PORT:=2222
+USER:=isucon
+IP:=18.177.136.31
+KEY_FILE:=~/.ssh/r-pc-win.pem
+PORT:=22
 
 # 変数
 alp_matching_group = ''
@@ -11,19 +11,20 @@ alp_matching_group = ''
 SERVER:=${USER}@${IP}
 time:=${shell date '+%H%M_%S'}
 
-setup:
-	mkdir access_log
-	mkdir access_log_alp
-
 ssh:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 
+
+# TODO
+ssh-db:
+	cd ~/private-isu/webapp/ && sudo docker compose cp /usr/bin/perl mysql:/usr/bin/perl
+	cd ~/private-isu/webapp/ && sudo docker compose exec mysql bash
 
 log-all: log-pull log-rm
 
 log-pull:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} \
 		'sudo cp /var/log/nginx/access.log /tmp && sudo chmod 666 /tmp/access.log'
-	scp -i ${KEY_FILE} -p ${PORT} ${SERVER}:/tmp/access.log ./access_log/${time}.log
+	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/access.log ./access_log/${time}.log
 
 log-rm:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} \
@@ -34,12 +35,34 @@ log-alp:
 	alp json --file=access_log/${latest_log} --config=./alp.config.yml
 
 setup:
+	mkdir access_log
+	mkdir access_log_alp
+
 	sudo apt update
 	sudo apt install -y unzip
 	cd /tmp && wget https://github.com/tkuchiki/alp/releases/download/v1.0.9/alp_linux_amd64.zip
 	unzip /tmp/alp_linux_amd64.zip
 	sudo install alp /usr/local/bin/alp
 	rm alp_linux_amd64.zip alp
+
+docker-setup:
+	# install application
+	cd ~/private-isu/webapp/ && sudo docker compose up -d
+	cd ~/private-isu/webapp/ && sudo docker compose exec app apt-get update
+	cd ~/private-isu/webapp/ && sudo docker compose exec app apt install vim openssh-server nginx sudo -y
+	cd ~/private-isu/webapp/ && sudo docker compose exec app service nginx start
+	cd ~/private-isu/webapp/ && sudo docker compose exec app service ssh start
+
+	# create user
+	# cd ~/private-isu/webapp/ && sudo docker compose exec app useradd -m -s /bin/bash -G sudo,root ${USER}
+	cd ~/private-isu/webapp/ && sudo docker compose exec -u isucon app mkdir -p /home/${USER}/.ssh
+	cd ~/private-isu/webapp/ && sudo docker compose cp ~/.ssh/id_ed25519.pub app:/home/${USER}/.ssh/authorized_keys
+	cd ~/private-isu/webapp/ && sudo docker compose exec app chown ${USER}:${USER} /home/${USER}/.ssh/authorized_keys
+	: > ~/.ssh/known_hosts
+	
+
+docker-exec:
+	cd ~/private-isu/webapp/ && sudo docker compose exec app bash
 
 ## TODO
 
@@ -48,6 +71,8 @@ ssh-v:
 
 bench:
 	ssh ubuntu@18.181.250.99 -i ~/.ssh/r-pc-win.pem sudo -u isucon /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://52.199.234.186/
+
+	
 
 
 # FROM https://github.com/oribe1115/traP-isucon-newbie-handson2022/blob/main/Makefile
