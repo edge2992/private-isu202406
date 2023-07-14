@@ -1,8 +1,5 @@
 # 環境変数
-USER:=isucon
-IP:=18.177.136.31
-KEY_FILE:=~/.ssh/r-pc-win.pem
-PORT:=22
+include env.sh
 
 # 変数
 alp_matching_group = ''
@@ -14,38 +11,66 @@ time:=${shell date '+%H%M_%S'}
 ssh:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 
 
-# TODO
-ssh-db:
-	cd ~/private-isu/webapp/ && sudo docker compose cp /usr/bin/perl mysql:/usr/bin/perl
-	cd ~/private-isu/webapp/ && sudo docker compose exec mysql bash
-
-log-all: log-pull log-rm
+########## LOG ##########
+log-all: log-pull log-rm log-alp
 
 log-pull:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} \
-		'sudo cp /var/log/nginx/access.log /tmp && sudo chmod 666 /tmp/access.log'
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo cp /var/log/nginx/access.log /tmp && \
+		sudo chmod 666 /tmp/access.log \
+	'
 	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/access.log ./access_log/${time}.log
 
 log-rm:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} \
-		': | sudo tee /var/log/nginx/access.log'
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo service nginx stop && \
+		: | sudo tee /var/log/nginx/access.log && \
+		sudo service nginx start \
+	'
 
 latest_log:=$(shell ls access_log | sort -r | head -n 1)
 log-alp:
-	alp json --file=access_log/${latest_log} --config=./alp.config.yml
+	alp json --file=access_log/${latest_log} --config=./alp.config.yml | tee access_log_alp/${latest_log}
 
-setup:
-	mkdir access_log
-	mkdir access_log_alp
+########## SQL ##########
+sql-all: sql-record sql-pull
+
+sql-record:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo query-digester -duration 5 \
+	'
+
+sql-pull:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		latest_log=`sudo ls /tmp/slow_query_*.digest | sort -r | head -n 1` && \
+		sudo cp -f $$latest_log /tmp/${time}.digest && \
+		sudo chmod 777 /tmp/${time}.digest \
+	'
+	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/${time}.digest ./query_digest/${time}.digest
+
+########## SETUP ##########
+setup-all: setup-docker setup-local setup-sql-query-digester 
+
+setup-local:
+	mkdir -p access_log
+	mkdir -p access_log_alp
+	mkdir -p query_digest
 
 	sudo apt update
 	sudo apt install -y unzip
-	cd /tmp && wget https://github.com/tkuchiki/alp/releases/download/v1.0.9/alp_linux_amd64.zip
-	unzip /tmp/alp_linux_amd64.zip
-	sudo install alp /usr/local/bin/alp
-	rm alp_linux_amd64.zip alp
+	cd /tmp && wget https://github.com/tkuchiki/alp/releases/download/v1.0.8/alp_linux_amd64.zip
+	unzip -o /tmp/alp_linux_amd64.zip -d /tmp
+	sudo install /tmp/alp /usr/local/bin/alp
 
-docker-setup:
+setup-sql-query-digester:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo apt-get update && \
+		sudo apt-get install -y percona-toolkit && \
+		sudo wget https://raw.githubusercontent.com/kazeburo/query-digester/main/query-digester -O /usr/local/bin/query-digester && \
+		sudo chmod 777 /usr/local/bin/query-digester \
+	'
+
+setup-docker:
 	# install application
 	cd ~/private-isu/webapp/ && sudo docker compose up -d
 	cd ~/private-isu/webapp/ && sudo docker compose exec app apt-get update
@@ -54,30 +79,24 @@ docker-setup:
 	cd ~/private-isu/webapp/ && sudo docker compose exec app service ssh start
 
 	# create user
-	# cd ~/private-isu/webapp/ && sudo docker compose exec app useradd -m -s /bin/bash -G sudo,root ${USER}
 	cd ~/private-isu/webapp/ && sudo docker compose exec -u isucon app mkdir -p /home/${USER}/.ssh
 	cd ~/private-isu/webapp/ && sudo docker compose cp ~/.ssh/id_ed25519.pub app:/home/${USER}/.ssh/authorized_keys
 	cd ~/private-isu/webapp/ && sudo docker compose exec app chown ${USER}:${USER} /home/${USER}/.ssh/authorized_keys
 	: > ~/.ssh/known_hosts
-	
 
-docker-exec:
-	cd ~/private-isu/webapp/ && sudo docker compose exec app bash
+	# DB
+	cd ~/private-isu/webapp/ && sudo docker compose exec mysql apt-get update
+	cd ~/private-isu/webapp/ && sudo docker compose exec mysql apt install vim openssh-server sudo -y
+	cd ~/private-isu/webapp/ && sudo docker compose exec mysql service ssh start
+	cd ~/private-isu/webapp/ && sudo docker compose exec -u isucon mysql mkdir -p /home/${USER}/.ssh
+	cd ~/private-isu/webapp/ && sudo docker compose cp ~/.ssh/id_ed25519.pub mysql:/home/${USER}/.ssh/authorized_keys
+	cd ~/private-isu/webapp/ && sudo docker compose exec mysql chown ${USER}:${USER} /home/${USER}/.ssh/authorized_keys
+	: > ~/.ssh/known_hosts
 
-## TODO
-
-ssh-v:
-	ssh ubuntu@18.181.250.99 -i ~/.ssh/r-pc-win.pem
-
-bench:
-	ssh ubuntu@18.181.250.99 -i ~/.ssh/r-pc-win.pem sudo -u isucon /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://52.199.234.186/
-
-	
 
 
 # FROM https://github.com/oribe1115/traP-isucon-newbie-handson2022/blob/main/Makefile
 
-include env.sh
 # 変数定義 ------------------------
 
 # SERVER_ID: env.sh内で定義
