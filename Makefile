@@ -37,7 +37,7 @@ sql-all: sql-record sql-pull
 
 sql-record:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo query-digester -duration 5 \
+		sudo query-digester -duration 60 \
 	'
 
 sql-pull:
@@ -49,7 +49,7 @@ sql-pull:
 	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/${time}.digest ./query_digest/${time}.digest
 
 ########## SETUP ##########
-setup-all: setup-docker setup-local setup-sql-query-digester 
+setup-all: setup-docker setup-local setup-sql-query-digester setup-nginx-conf
 
 setup-local:
 	mkdir -p access_log
@@ -67,8 +67,22 @@ setup-sql-query-digester:
 		sudo apt-get update && \
 		sudo apt-get install -y percona-toolkit && \
 		sudo wget https://raw.githubusercontent.com/kazeburo/query-digester/main/query-digester -O /usr/local/bin/query-digester && \
-		sudo chmod 777 /usr/local/bin/query-digester \
+		sudo chmod 777 /usr/local/bin/query-digester && \
+		echo "ALTER USER root@localhost IDENTIFIED BY '';" | mysql -u root -p \
 	'
+
+setup-nginx-conf:
+	scp -i ${KEY_FILE} -P ${PORT} ./config_files/nginx.conf ${SERVER}:/tmp/nginx.conf
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		cat /tmp/nginx.conf | sudo tee /etc/nginx/nginx.conf > /dev/null && \
+		sudo service nginx restart \
+	'
+
+pull-nginx-conf:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo cat /etc/nginx/nginx.conf > /tmp/nginx.conf \
+	'
+	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/nginx.conf ./config_files/nginx.conf
 
 setup-docker:
 	# install application
@@ -92,8 +106,7 @@ setup-docker:
 	cd ~/private-isu/webapp/ && sudo docker compose cp ~/.ssh/id_ed25519.pub mysql:/home/${USER}/.ssh/authorized_keys
 	cd ~/private-isu/webapp/ && sudo docker compose exec mysql chown ${USER}:${USER} /home/${USER}/.ssh/authorized_keys
 	: > ~/.ssh/known_hosts
-
-
+	
 
 # FROM https://github.com/oribe1115/traP-isucon-newbie-handson2022/blob/main/Makefile
 
