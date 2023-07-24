@@ -8,6 +8,13 @@ alp_matching_group = ''
 SERVER:=${USER}@${IP}
 time:=${shell date '+%H%M_%S'}
 
+# 環境によって変わる変数
+DB_PATH:=/etc/mysql
+NGINX_PATH:=/etc/nginx
+SYSTEMD_PATH:=/etc/systemd/system
+BIN_NAME:=isucondition
+SERVICE_NAME:=$(BIN_NAME).go.service
+
 ssh:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 
 
@@ -106,6 +113,61 @@ setup-docker:
 	cd ~/private-isu/webapp/ && sudo docker compose cp ~/.ssh/id_ed25519.pub mysql:/home/${USER}/.ssh/authorized_keys
 	cd ~/private-isu/webapp/ && sudo docker compose exec mysql chown ${USER}:${USER} /home/${USER}/.ssh/authorized_keys
 	: > ~/.ssh/known_hosts
+
+########## CONFIG ##########
+get-db-conf:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		mkdir -p /tmp/etc/mysql && \
+		sudo cp -Rpf $(DB_PATH)/* /tmp/etc/mysql && \
+		sudo chmod -R +r /tmp/etc/ \
+	'
+	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/etc/mysql ./config_files/
+
+get-nginx-conf:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		mkdir -p /tmp/etc/nginx && \
+		sudo cp -Rpf $(NGINX_PATH)/* /tmp/etc/nginx && \
+		sudo chmod -R +r /tmp/etc/ \
+	'
+	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/etc/nginx ./config_files/
+
+get-service-file:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		mkdir -p /tmp/etc/systemd/system/ && \
+		sudo cp -Rpf $(SYSTEMD_PATH)/$(SERVICE_NAME) /tmp/etc/systemd/system/ && \
+		sudo chmod -R +r /tmp/etc/ \
+	'
+	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/etc/systemd ./config_files/
+
+# TODO: 動作未確認
+deploy-db-conf:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo rm -r /tmp/etc/mysql \
+	'
+	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/mysql ${SERVER}:/tmp/etc/
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo cp -Rpf /tmp/etc/mysql/* $(DB_PATH) \
+	'
+
+deploy-nginx-conf:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo rm -r /tmp/etc/nginx \
+	'
+	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/nginx ${SERVER}:/tmp/etc
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo cp -Rpf /tmp/etc/nginx/* $(NGINX_PATH) && \
+		sudo service nginx restart \
+	'
+
+# TODO: 動作未確認
+deploy-service-file:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo rm -r /tmp/etc/systemd \
+	'
+	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/systemd ${SERVER}:/tmp/etc/
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo cp -Rpf /tmp/etc/systemd/system/* $(SYSTEMD_PATH)/$(SERVICE_NAME) && \
+	'
 	
 
 # FROM https://github.com/oribe1115/traP-isucon-newbie-handson2022/blob/main/Makefile
@@ -115,13 +177,8 @@ setup-docker:
 # SERVER_ID: env.sh内で定義
 
 # 問題によって変わる変数
-BIN_NAME:=isucondition
 BUILD_DIR:=/home/isucon/webapp/go
-SERVICE_NAME:=$(BIN_NAME).go.service
 
-DB_PATH:=/etc/mysql
-NGINX_PATH:=/etc/nginx
-SYSTEMD_PATH:=/etc/systemd/system
 
 NGINX_LOG:=/var/log/nginx/access.log
 DB_SLOW_LOG:=/var/log/mysql/mariadb-slow.log
@@ -215,36 +272,11 @@ set-as-s2:
 set-as-s3:
 	echo "SERVER_ID=s3" >> env.sh
 
-.PHONY: get-db-conf
-get-db-conf:
-	sudo cp -R $(DB_PATH)/* ~/$(SERVER_ID)/etc/mysql
-	sudo chown $(USER) -R ~/$(SERVER_ID)/etc/mysql
-
-.PHONY: get-nginx-conf
-get-nginx-conf:
-	sudo cp -R $(NGINX_PATH)/* ~/$(SERVER_ID)/etc/nginx
-	sudo chown $(USER) -R ~/$(SERVER_ID)/etc/nginx
-
-.PHONY: get-service-file
-get-service-file:
-	sudo cp $(SYSTEMD_PATH)/$(SERVICE_NAME) ~/$(SERVER_ID)/etc/systemd/system/$(SERVICE_NAME)
-	sudo chown $(USER) ~/$(SERVER_ID)/etc/systemd/system/$(SERVICE_NAME)
 
 .PHONY: get-envsh
 get-envsh:
 	cp ~/env.sh ~/$(SERVER_ID)/home/isucon/env.sh
 
-.PHONY: deploy-db-conf
-deploy-db-conf:
-	sudo cp -R ~/$(SERVER_ID)/etc/mysql/* $(DB_PATH)
-
-.PHONY: deploy-nginx-conf
-deploy-nginx-conf:
-	sudo cp -R ~/$(SERVER_ID)/etc/nginx/* $(NGINX_PATH)
-
-.PHONY: deploy-service-file
-deploy-service-file:
-	sudo cp ~/$(SERVER_ID)/etc/systemd/system/$(SERVICE_NAME) $(SYSTEMD_PATH)/$(SERVICE_NAME)
 
 .PHONY: deploy-envsh
 deploy-envsh:
