@@ -56,8 +56,7 @@ sql-pull:
 	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/${time}.digest ./query_digest/${time}.digest
 
 ########## SETUP ##########
-setup-all: setup-docker setup-local setup-sql-query-digester setup-nginx-conf
-
+setup-all: setup-docker setup-local setup-nginx-conf setup-sql-query-digester
 setup-local:
 	mkdir -p access_log
 	mkdir -p access_log_alp
@@ -142,7 +141,7 @@ get-service-file:
 # TODO: 動作未確認
 deploy-db-conf:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo rm -r /tmp/etc/mysql \
+		sudo rm -rf /tmp/etc/mysql \
 	'
 	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/mysql ${SERVER}:/tmp/etc/
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
@@ -151,7 +150,7 @@ deploy-db-conf:
 
 deploy-nginx-conf:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo rm -r /tmp/etc/nginx \
+		sudo rm -rf /tmp/etc/nginx \
 	'
 	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/nginx ${SERVER}:/tmp/etc
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
