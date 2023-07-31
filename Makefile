@@ -18,6 +18,16 @@ SERVICE_NAME:=$(BIN_NAME).go.service
 ssh:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 
 
+########## APP ##########
+app:
+	cd /home/aaa/private-isu/webapp/golang/ && go build -o /tmp/app /home/aaa/private-isu/webapp/golang/app.go
+	scp -i ${KEY_FILE} -P ${PORT} /tmp/app ${SERVER}:/tmp/app
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo cp -r /tmp/app /home/webapp/app \
+	'
+
+
+
 ########## LOG ##########
 log-all: log-pull log-rm log-alp
 
@@ -92,7 +102,7 @@ pull-nginx-conf:
 
 setup-docker:
 	# install application
-	cd ~/private-isu/webapp/ && sudo docker compose up -d
+	cd ~/private-isu/webapp/ && sudo docker compose up -d --build
 	cd ~/private-isu/webapp/ && sudo docker compose exec app apt-get update
 	cd ~/private-isu/webapp/ && sudo docker compose exec app apt install vim openssh-server nginx sudo -y
 	cd ~/private-isu/webapp/ && sudo docker compose exec app service nginx start
@@ -106,12 +116,13 @@ setup-docker:
 
 	# DB
 	cd ~/private-isu/webapp/ && sudo docker compose exec mysql apt-get update
-	cd ~/private-isu/webapp/ && sudo docker compose exec mysql apt install vim openssh-server sudo -y
+	cd ~/private-isu/webapp/ && sudo docker compose exec mysql apt install vim openssh-server -y
 	cd ~/private-isu/webapp/ && sudo docker compose exec mysql service ssh start
 	cd ~/private-isu/webapp/ && sudo docker compose exec -u isucon mysql mkdir -p /home/${USER}/.ssh
 	cd ~/private-isu/webapp/ && sudo docker compose cp ~/.ssh/id_ed25519.pub mysql:/home/${USER}/.ssh/authorized_keys
 	cd ~/private-isu/webapp/ && sudo docker compose exec mysql chown ${USER}:${USER} /home/${USER}/.ssh/authorized_keys
 	: > ~/.ssh/known_hosts
+	cd ~/private-isu/webapp/ && echo 'ALTER USER root@localhost IDENTIFIED BY "";' | sudo docker compose exec -T mysql mysql -u root -proot
 
 ########## CONFIG ##########
 get-db-conf:
@@ -150,7 +161,8 @@ deploy-db-conf:
 
 deploy-nginx-conf:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo rm -rf /tmp/etc/nginx \
+		sudo rm -rf /tmp/etc/nginx && \
+		mkdir -p /tmp/etc/nginx \
 	'
 	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/nginx ${SERVER}:/tmp/etc
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
