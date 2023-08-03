@@ -20,7 +20,7 @@ ssh:
 
 ########## APP ##########
 app:
-	cd /home/aaa/private-isu/webapp/golang/ && go build -o /tmp/app /home/aaa/private-isu/webapp/golang/app.go
+	cd ~/private-isu/webapp/golang/ && go build -o /tmp/app ~/private-isu/webapp/golang/app.go
 	scp -i ${KEY_FILE} -P ${PORT} /tmp/app ${SERVER}:/tmp/app
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
 		sudo cp -r /tmp/app /home/webapp/app \
@@ -84,7 +84,7 @@ setup-sql-query-digester:
 		sudo apt-get install -y percona-toolkit && \
 		sudo wget https://raw.githubusercontent.com/kazeburo/query-digester/main/query-digester -O /usr/local/bin/query-digester && \
 		sudo chmod 777 /usr/local/bin/query-digester && \
-		echo "ALTER USER root@localhost IDENTIFIED BY '';" | mysql -u root -p \
+		echo mysql -u root -e "ALTER USER root@localhost IDENTIFIED BY '';" \
 	'
 
 setup-nginx-conf:
