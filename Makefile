@@ -18,6 +18,24 @@ SERVICE_NAME:=$(BIN_NAME).go.service
 ssh:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 
 
+ssh-port:
+	ssh -i ${KEY_FILE} -p ${PORT} -L 19999:localhost:19999 ${SERVER}
+
+########## BENCH ##########
+bench-ssh:
+	ssh -A -i ${KEY_FILE} -p ${PORT} ubuntu@ec2-54-199-65-131.ap-northeast-1.compute.amazonaws.com
+
+bench:
+	ssh -i ${KEY_FILE} -p ${PORT} ubuntu@ec2-54-199-65-131.ap-northeast-1.compute.amazonaws.com '\
+		sudo /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://172.31.28.128 \
+	'
+
+speed-test-download:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 'dd if=/dev/zero bs=1M count=100' | dd of=/dev/null
+
+speed-test-upload:
+	dd if=/dev/zero bs=1M count=100 | ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 'dd of=/dev/null'
+
 ########## APP ##########
 app:
 	cd ./golang && go build -o /tmp/app ./app.go
@@ -31,6 +49,11 @@ app:
 app-pull-source:
 	mkdir -p source
 	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/home/isucon/private_isu/webapp/golang ./
+
+app-log:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo journalctl -f -u isu-go \
+	'
 
 
 
@@ -73,6 +96,13 @@ sql-pull:
 
 ########## SETUP ##########
 setup-all: setup-docker setup-local setup-nginx-conf setup-sql-query-digester
+
+setup-netdata:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		sudo apt update && \
+		sudo apt install -y netdata \
+	'
+
 setup-local:
 	mkdir -p access_log
 	mkdir -p access_log_alp
@@ -214,10 +244,6 @@ get-conf: check-server-id get-db-conf get-nginx-conf get-service-file get-envsh
 # リポジトリ内の設定ファイルをそれぞれ配置する
 .PHONY: deploy-conf
 deploy-conf: check-server-id deploy-db-conf deploy-nginx-conf deploy-service-file deploy-envsh
-
-# ベンチマークを走らせる直前に実行する
-.PHONY: bench
-bench: check-server-id mv-logs build deploy-conf restart watch-service-log
 
 # slow queryを確認する
 .PHONY: slow-query
