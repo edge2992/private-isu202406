@@ -83,7 +83,7 @@ sql-all: sql-record sql-pull
 
 sql-record:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo query-digester -duration 60 \
+		sudo query-digester -duration 75 \
 	'
 
 sql-pull:
