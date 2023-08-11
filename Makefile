@@ -20,11 +20,17 @@ ssh:
 
 ########## APP ##########
 app:
-	cd ~/private-isu/webapp/golang/ && go build -o /tmp/app ~/private-isu/webapp/golang/app.go
+	cd ./golang && go build -o /tmp/app ./app.go
 	scp -i ${KEY_FILE} -P ${PORT} /tmp/app ${SERVER}:/tmp/app
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo cp -r /tmp/app /home/webapp/app \
+		sudo systemctl stop isu-go && \
+		sudo cp -r /tmp/app /home/isucon/private_isu/webapp/golang/app && \
+		sudo systemctl start isu-go \
 	'
+
+app-pull-source:
+	mkdir -p source
+	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/home/isucon/private_isu/webapp/golang ./
 
 
 
