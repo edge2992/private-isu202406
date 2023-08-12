@@ -19,7 +19,7 @@ ssh:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 
 
 ssh-port:
-	ssh -i ${KEY_FILE} -p ${PORT} -L 19999:localhost:19999 ${SERVER}
+	ssh -i ${KEY_FILE} -p ${PORT} -L 19999:localhost:19999 -L 6060:localhost:6060 -L 1080:localhost:1080 ${SERVER}
 
 ########## BENCH ##########
 bench-ssh:
@@ -31,6 +31,12 @@ bench:
 	'
 bench-local:
 	docker run --network host --add-host host.docker.internal:host-gateway -i private-isu-benchmarker /opt/go/bin/benchmarker -t http://${IP} -u /opt/go/userdata
+
+pprof:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		/home/isucon/.local/go/bin/go tool pprof -http=0.0.0.0:1080 /home/isucon/private_isu/webapp/golang/app http://localhost:6060/debug/pprof/profile \
+	'
+
 
 ########## SPEED TEST ##########
 speed-test-download:
