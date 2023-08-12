@@ -29,6 +29,8 @@ bench:
 	ssh -i ${KEY_FILE} -p ${PORT} ${USER}@${BENCH_IP} '\
 		sudo /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://${IP} \
 	'
+bench-local:
+	docker run --network host --add-host host.docker.internal:host-gateway -i private-isu-benchmarker /opt/go/bin/benchmarker -t http://${IP} -u /opt/go/userdata
 
 ########## SPEED TEST ##########
 speed-test-download:
