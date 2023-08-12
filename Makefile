@@ -23,13 +23,14 @@ ssh-port:
 
 ########## BENCH ##########
 bench-ssh:
-	ssh -A -i ${KEY_FILE} -p ${PORT} ubuntu@ec2-54-199-65-131.ap-northeast-1.compute.amazonaws.com
+	ssh -A -i ${KEY_FILE} -p ${PORT} ${BE}
 
 bench:
-	ssh -i ${KEY_FILE} -p ${PORT} ubuntu@ec2-54-199-65-131.ap-northeast-1.compute.amazonaws.com '\
-		sudo /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://172.31.28.128 \
+	ssh -i ${KEY_FILE} -p ${PORT} ${USER}@${BENCH_IP} '\
+		sudo /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://${IP} \
 	'
 
+########## SPEED TEST ##########
 speed-test-download:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 'dd if=/dev/zero bs=1M count=100' | dd of=/dev/null
 
@@ -58,16 +59,17 @@ app-log:
 
 
 ########## LOG ##########
-log-all: log-pull log-rm log-alp
+nginx-all: nginx-pull nginx-rm nginx-alp
 
-log-pull:
+nginx-pull:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
 		sudo cp /var/log/nginx/access.log /tmp && \
 		sudo chmod 666 /tmp/access.log \
 	'
+	mkdir -p access_log
 	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/access.log ./access_log/${time}.log
 
-log-rm:
+nginx-rm:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
 		sudo service nginx stop && \
 		: | sudo tee /var/log/nginx/access.log && \
@@ -75,7 +77,7 @@ log-rm:
 	'
 
 latest_log:=$(shell ls access_log | sort -r | head -n 1)
-log-alp:
+nginx-alp:
 	alp json --file=access_log/${latest_log} --config=./alp.config.yml | tee access_log_alp/${latest_log}
 
 ########## SQL ##########
@@ -175,6 +177,7 @@ get-nginx-conf:
 		sudo cp -Rpf $(NGINX_PATH)/* /tmp/etc/nginx && \
 		sudo chmod -R +r /tmp/etc/ \
 	'
+	mkdir -p ./config_files/nginx
 	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/etc/nginx ./config_files/
 
 get-service-file:
