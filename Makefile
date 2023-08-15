@@ -21,6 +21,13 @@ ssh:
 ssh-port:
 	ssh -i ${KEY_FILE} -p ${PORT} -L 19999:localhost:19999 -L 6060:localhost:6060 -L 1080:localhost:1080 ${SERVER}
 
+ssh-apply-auth:
+	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+		for i in "kajikentaro" "edge2992" "methylpentane"; do \
+			curl https://github.com/"$$i".keys >> ~/.ssh/authorized_keys;\
+		done \
+	'
+
 ########## BENCH ##########
 bench-ssh:
 	ssh -A -i ${KEY_FILE} -p ${PORT} ${BE}
@@ -84,7 +91,7 @@ nginx-rm:
 		sudo service nginx start \
 	'
 
-latest_log:=$(shell ls access_log | sort -r | head -n 1)
+latest_log:=$(shell ls access_log 2> /dev/null | sort -r | head -n 1)
 nginx-alp:
 	alp json --file=access_log/${latest_log} --config=./alp.config.yml | tee access_log_alp/${latest_log}
 
@@ -106,6 +113,12 @@ sql-pull:
 
 ########## SETUP ##########
 setup-all: setup-docker setup-local setup-nginx-conf setup-sql-query-digester
+
+NOW_DIR:=$(shell pwd)
+setup-directory:
+	mkdir -p ../s1 && cp env.sh ../s1 && ln -s $(shell pwd)/Makefile ../s1/Makefile
+	mkdir -p ../s2 && cp env.sh ../s2 && ln -s $(shell pwd)/Makefile ../s2/Makefile
+	mkdir -p ../s3 && cp env.sh ../s3 && ln -s $(shell pwd)/Makefile ../s3/Makefile
 
 setup-netdata:
 	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
