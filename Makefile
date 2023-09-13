@@ -1,136 +1,156 @@
 # 環境変数
-include env.sh
+include variable.sh
 
-# 変数
-alp_matching_group = ''
+# 環境によって変わる変数
+DIR_DB:=/etc/mysql
+DIR_NGINX:=/etc/nginx
+# /initializeのときに呼ばれるsqlがあるディレクトリ
+DIR_SQL_INIT:=/home/isucon/webapp/sql
+FILE_NGINX_LOG:=/var/log/nginx/access.log
+FILE_APP_BIN:=/home/isucon/webapp/go/isucondition
+FILE_ENV:=/home/isucon/env.sh
+FILE_SERVICE:=/etc/systemd/system/isucondition.go.service
+
+DIR_APP:=${shell dirname ${FILE_APP_BIN}}
+DIR_SYSTEMD:=${shell dirname ${FILE_SERVICE}}
+NAME_SERVICE:=${shell basename ${FILE_SERVICE}}
 
 # 定数
 SERVER:=${USER}@${IP}
-time:=${shell date '+%H%M_%S'}
+# 時刻のみ
+# time:=${shell date '+%H%M_%S'}
+# 年_月日_時分_秒
+time:=${shell date '+%y_%m%d_%H%M_%S'}
+OUTPUT_PATH:=../
 
-# 環境によって変わる変数
-DB_PATH:=/etc/mysql
-NGINX_PATH:=/etc/nginx
-SYSTEMD_PATH:=/etc/systemd/system
-BIN_NAME:=isucondition
-SERVICE_NAME:=$(BIN_NAME).go.service
+
+access-db:
+	ssh -p ${PORT} ${SERVER} -t  'mysql -h 127.0.0.1 -u isucon --password=isucon isucondition'
 
 ssh:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 
+	ssh -p ${PORT} -X ${SERVER} 
 
 ssh-port:
-	ssh -i ${KEY_FILE} -p ${PORT} -L 19999:localhost:19999 -L 6060:localhost:6060 -L 1080:localhost:1080 ${SERVER}
+	ssh -p ${PORT} -L 19999:localhost:19999 -L 6060:localhost:6060 -L 1080:localhost:1080 -L 5000:127.0.0.1:5000 ${SERVER}
 
+# ssh-apply-authのときのみ別のユーザーを指定できる
+# ex) USER_INIT=ubuntu IP_INIT=123.456.789 make ssh-apply-auth
+USER_INIT ?= ${USER}
+IP_INIT ?= ${IP}
 ssh-apply-auth:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+	ssh -i ${KEY_FILE} -p ${PORT} ${USER_INIT}@${IP_INIT} '\
 		for i in "kajikentaro" "edge2992" "methylpentane"; do \
-			curl https://github.com/"$$i".keys >> ~/.ssh/authorized_keys;\
+			sudo -Su ${USER} bash -c "curl https://github.com/$$i.keys >> ~/.ssh/authorized_keys" ; \
+			curl https://github.com/$$i.keys >> ~/.ssh/authorized_keys ; \
 		done \
 	'
 
+########## INIT ##########
+# 設定ファイルなどを取得してgit管理下に配置する
+# 取得する設定：env.sh, nginx, mysql, sql, service, webapp/go
+.PHONY: get-conf
+get-conf: get-all
+
+########## MAIN ##########
+# ベンチマークを走らせる直前に実行する
+# ビルド、デプロイ、ログ初期化, リスタート
+.PHONY: before-bench
+before-bench:  rm-logs app-build deploy-all restart
+
+# ベンチを走らせた後に実行する
+# ログの取得, 解析
+.PHONY: after-bench
+after-bench: nginx-pull nginx-alp
+
 ########## BENCH ##########
 bench-ssh:
-	ssh -A -i ${KEY_FILE} -p ${PORT} ${BE}
+	ssh -A -p ${PORT} -X ${USER}@${BENCH_IP}
 
+bench-port:
+	eval $$(ssh-agent) && \
+	find ~/.ssh/ -type f -exec grep -l "PRIVATE" {} \; | xargs ssh-add && \
+	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
+		ssh-add -l && \
+		ssh -oStrictHostKeyChecking=no -R 4999:localhost:4999 -4 isucon@${IP} \
+	'
+
+.PHONY: pprof-record
+pprof-record:
+	$(eval PPROF_TMPDIR := $(shell pwd)/$(SERVER_ID)/pprof)
+	@echo ${PPROF_TMPDIR}
+	@mkdir -p ${PPROF_TMPDIR}
+	PPROF_TMPDIR=${PPROF_TMPDIR} \
+		go tool pprof https://isucondition-1.t.isucon.dev/debug/pprof/profile?seconds=30
+
+.PHONY: pprof-check
+pprof-check:
+	$(eval PPROF_TMPDIR := $(shell pwd)/$(SERVER_ID)/pprof)
+	$(eval latest := $(shell ls -rt $(PPROF_TMPDIR) | tail -n 1))
+	go tool pprof -http=localhost:8090 $(PPROF_TMPDIR)/$(latest)
+
+# isucon-11q for ansibleは、裏で
+#   make bench-port
+# を実行する必要がある
 bench:
-	ssh -i ${KEY_FILE} -p ${PORT} ${USER}@${BENCH_IP} '\
-		sudo /home/isucon/private_isu.git/benchmarker/bin/benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://${IP} \
-	'
-bench-local:
-	docker run --network host --add-host host.docker.internal:host-gateway -i private-isu-benchmarker /opt/go/bin/benchmarker -t http://${IP} -u /opt/go/userdata
-
-pprof:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		/home/isucon/.local/go/bin/go tool pprof -http=0.0.0.0:1080 /home/isucon/private_isu/webapp/golang/app http://localhost:6060/debug/pprof/profile \
-	'
-
-
-########## SPEED TEST ##########
-speed-test-download:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 'dd if=/dev/zero bs=1M count=100' | dd of=/dev/null
-
-speed-test-upload:
-	dd if=/dev/zero bs=1M count=100 | ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} 'dd of=/dev/null'
+	mkdir -p bench_result
+	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
+		cd /home/isucon/bench && ./bench -all-addresses ${IP} -target ${IP}:443 -tls -jia-service-url http://127.0.0.1:4999 2> /dev/null \
+	' | tee bench_result/${time}.log
 
 ########## APP ##########
-app:
-	cd ./golang && go build -o /tmp/app ./app.go
-	scp -i ${KEY_FILE} -P ${PORT} /tmp/app ${SERVER}:/tmp/app
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo systemctl stop isu-go && \
-		sudo cp -r /tmp/app /home/isucon/private_isu/webapp/golang/app && \
-		sudo systemctl start isu-go \
-	'
-
-app-pull-source:
-	mkdir -p source
-	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/home/isucon/private_isu/webapp/golang ./
+app-build:
+	cd ${OUTPUT_PATH}/app && CGO_ENABLED=0 go build -o ${shell basename ${FILE_APP_BIN}} main.go
 
 app-log:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo journalctl -f -u isu-go \
+	ssh -p ${PORT} ${SERVER} '\
+		sudo journalctl -f -u ${NAME_SERVICE} -n10 \
 	'
-
-
 
 ########## LOG ##########
-nginx-all: nginx-pull nginx-rm nginx-alp
-
 nginx-pull:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo cp /var/log/nginx/access.log /tmp && \
-		sudo chmod 666 /tmp/access.log \
-	'
-	mkdir -p access_log
-	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/access.log ./access_log/${time}.log
+	mkdir -p ./access_log
+	rsync -a -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${FILE_NGINX_LOG} ./access_log/${time}.log
 
-nginx-rm:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo service nginx stop && \
-		: | sudo tee /var/log/nginx/access.log && \
-		sudo service nginx start \
+
+.PHONY: rm-logs
+rm-logs:
+	ssh -p ${PORT} ${SERVER} '\
+		sudo rm -f /var/log/nginx/access.log && \
+		sudo rm -f /var/log/mysql/mysql-slow.log \
 	'
 
-latest_log:=$(shell ls access_log 2> /dev/null | sort -r | head -n 1)
+latest_log=$(shell ls access_log 2> /dev/null | sort -r | head -n 1)
 nginx-alp:
-	alp json --file=access_log/${latest_log} --config=./alp.config.yml | tee access_log_alp/${latest_log}
+	mkdir -p ./access_log_alp
+	alp json --file=access_log/${latest_log} --config=../makefile/alp.config.yml | tee access_log_alp/${latest_log}
 
 ########## SQL ##########
 sql-all: sql-record sql-pull
 
 sql-record:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+	ssh -p ${PORT} ${SERVER} '\
 		sudo query-digester -duration 75 \
 	'
 
 sql-pull:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+	ssh -p ${PORT} ${SERVER} '\
 		latest_log=`sudo ls /tmp/slow_query_*.digest | sort -r | head -n 1` && \
 		sudo cp -f $$latest_log /tmp/${time}.digest && \
 		sudo chmod 777 /tmp/${time}.digest \
 	'
-	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/${time}.digest ./query_digest/${time}.digest
+	mkdir -p ./query_digest
+	scp -P ${PORT} ${SERVER}:/tmp/${time}.digest ./query_digest/${time}.digest
 
 ########## SETUP ##########
-setup-all: setup-docker setup-local setup-nginx-conf setup-sql-query-digester
+setup-all: setup-local setup-sql-query-digester
 
-NOW_DIR:=$(shell pwd)
+NOW_DIR:=$(shell basename `pwd`)
 setup-directory:
-	mkdir -p ../s1 && cp env.sh ../s1 && ln -s $(shell pwd)/Makefile ../s1/Makefile
-	mkdir -p ../s2 && cp env.sh ../s2 && ln -s $(shell pwd)/Makefile ../s2/Makefile
-	mkdir -p ../s3 && cp env.sh ../s3 && ln -s $(shell pwd)/Makefile ../s3/Makefile
-
-setup-netdata:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo apt update && \
-		sudo apt install -y netdata \
-	'
+	mkdir -p ../s1 && cp variable.sh ../s1 && ln -s ../${NOW_DIR}/Makefile ../s1/Makefile
+	mkdir -p ../s2 && cp variable.sh ../s2 && ln -s ../${NOW_DIR}/Makefile ../s2/Makefile
+	mkdir -p ../s3 && cp variable.sh ../s3 && ln -s ../${NOW_DIR}/Makefile ../s3/Makefile
 
 setup-local:
-	mkdir -p access_log
-	mkdir -p access_log_alp
-	mkdir -p query_digest
-
 	sudo apt update
 	sudo apt install -y unzip
 	cd /tmp && wget https://github.com/tkuchiki/alp/releases/download/v1.0.8/alp_linux_amd64.zip
@@ -138,7 +158,7 @@ setup-local:
 	sudo install /tmp/alp /usr/local/bin/alp
 
 setup-sql-query-digester:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
+	ssh -p ${PORT} ${SERVER} '\
 		sudo apt-get update && \
 		sudo apt-get install -y percona-toolkit && \
 		sudo wget https://raw.githubusercontent.com/kazeburo/query-digester/main/query-digester -O /usr/local/bin/query-digester && \
@@ -146,230 +166,67 @@ setup-sql-query-digester:
 		echo mysql -u root -e "ALTER USER root@localhost IDENTIFIED BY '';" \
 	'
 
-setup-nginx-conf:
-	scp -i ${KEY_FILE} -P ${PORT} ./config_files/nginx.conf ${SERVER}:/tmp/nginx.conf
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		cat /tmp/nginx.conf | sudo tee /etc/nginx/nginx.conf > /dev/null && \
-		sudo service nginx restart \
-	'
-
-pull-nginx-conf:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo cat /etc/nginx/nginx.conf > /tmp/nginx.conf \
-	'
-	scp -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/nginx.conf ./config_files/nginx.conf
-
-setup-docker:
-	# install application
-	cd ~/private-isu/webapp/ && sudo docker compose up -d --build
-	cd ~/private-isu/webapp/ && sudo docker compose exec app apt-get update
-	cd ~/private-isu/webapp/ && sudo docker compose exec app apt install vim openssh-server nginx sudo -y
-	cd ~/private-isu/webapp/ && sudo docker compose exec app service nginx start
-	cd ~/private-isu/webapp/ && sudo docker compose exec app service ssh start
-
-	# create user
-	cd ~/private-isu/webapp/ && sudo docker compose exec -u isucon app mkdir -p /home/${USER}/.ssh
-	cd ~/private-isu/webapp/ && sudo docker compose cp ~/.ssh/id_ed25519.pub app:/home/${USER}/.ssh/authorized_keys
-	cd ~/private-isu/webapp/ && sudo docker compose exec app chown ${USER}:${USER} /home/${USER}/.ssh/authorized_keys
-	: > ~/.ssh/known_hosts
-
-	# DB
-	cd ~/private-isu/webapp/ && sudo docker compose exec mysql apt-get update
-	cd ~/private-isu/webapp/ && sudo docker compose exec mysql apt install vim openssh-server -y
-	cd ~/private-isu/webapp/ && sudo docker compose exec mysql service ssh start
-	cd ~/private-isu/webapp/ && sudo docker compose exec -u isucon mysql mkdir -p /home/${USER}/.ssh
-	cd ~/private-isu/webapp/ && sudo docker compose cp ~/.ssh/id_ed25519.pub mysql:/home/${USER}/.ssh/authorized_keys
-	cd ~/private-isu/webapp/ && sudo docker compose exec mysql chown ${USER}:${USER} /home/${USER}/.ssh/authorized_keys
-	: > ~/.ssh/known_hosts
-	cd ~/private-isu/webapp/ && echo 'ALTER USER root@localhost IDENTIFIED BY "";' | sudo docker compose exec -T mysql mysql -u root -proot
-
-########## CONFIG ##########
-get-db-conf:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		mkdir -p /tmp/etc/mysql && \
-		sudo cp -Rpf $(DB_PATH)/* /tmp/etc/mysql && \
-		sudo chmod -R +r /tmp/etc/ \
-	'
-	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/etc/mysql ./config_files/
-
-get-nginx-conf:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		mkdir -p /tmp/etc/nginx && \
-		sudo cp -Rpf $(NGINX_PATH)/* /tmp/etc/nginx && \
-		sudo chmod -R +r /tmp/etc/ \
-	'
-	mkdir -p ./config_files/nginx
-	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/etc/nginx ./config_files/
-
-get-service-file:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		mkdir -p /tmp/etc/systemd/system/ && \
-		sudo cp -Rpf $(SYSTEMD_PATH)/$(SERVICE_NAME) /tmp/etc/systemd/system/ && \
-		sudo chmod -R +r /tmp/etc/ \
-	'
-	scp -r -i ${KEY_FILE} -P ${PORT} ${SERVER}:/tmp/etc/systemd ./config_files/
-
-# TODO: 動作未確認
-deploy-db-conf:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo rm -rf /tmp/etc/mysql \
-	'
-	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/mysql ${SERVER}:/tmp/etc/
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo cp -Rpf /tmp/etc/mysql/* $(DB_PATH) \
-	'
-
-deploy-nginx-conf:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo rm -rf /tmp/etc/nginx && \
-		mkdir -p /tmp/etc/nginx \
-	'
-	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/nginx ${SERVER}:/tmp/etc
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo cp -Rpf /tmp/etc/nginx/* $(NGINX_PATH) && \
-		sudo service nginx restart \
-	'
-
-# TODO: 動作未確認
-deploy-service-file:
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo rm -r /tmp/etc/systemd \
-	'
-	scp -r -i ${KEY_FILE} -P ${PORT} ./config_files/systemd ${SERVER}:/tmp/etc/
-	ssh -i ${KEY_FILE} -p ${PORT} ${SERVER} '\
-		sudo cp -Rpf /tmp/etc/systemd/system/* $(SYSTEMD_PATH)/$(SERVICE_NAME) && \
-	'
-	
-
-# FROM https://github.com/oribe1115/traP-isucon-newbie-handson2022/blob/main/Makefile
-
-# 変数定義 ------------------------
-
-# SERVER_ID: env.sh内で定義
-
-# 問題によって変わる変数
-BUILD_DIR:=/home/isucon/webapp/go
-
-
-NGINX_LOG:=/var/log/nginx/access.log
-DB_SLOW_LOG:=/var/log/mysql/mariadb-slow.log
-
-
-# メインで使うコマンド ------------------------
-
-# サーバーの環境構築　ツールのインストール、gitまわりのセットアップ
-.PHONY: setup
-# setup: install-tools git-setup
-
-# 設定ファイルなどを取得してgit管理下に配置する
-.PHONY: get-conf
-get-conf: check-server-id get-db-conf get-nginx-conf get-service-file get-envsh
-
-# リポジトリ内の設定ファイルをそれぞれ配置する
-.PHONY: deploy-conf
-deploy-conf: check-server-id deploy-db-conf deploy-nginx-conf deploy-service-file deploy-envsh
-
-# slow queryを確認する
-.PHONY: slow-query
-slow-query:
-	sudo pt-query-digest $(DB_SLOW_LOG)
-
-# alpでアクセスログを確認する
-.PHONY: alp
-alp:
-	sudo alp ltsv --file=$(NGINX_LOG) --config=/home/isucon/tool-config/alp/config.yml
-
-# pprofで記録する
-.PHONY: pprof-record
-pprof-record:
-	go tool pprof http://localhost:6060/debug/pprof/profile
-
-# pprofで確認する
-.PHONY: pprof-check
-pprof-check:
-	$(eval latest := $(shell ls -rt pprof/ | tail -n 1))
-	go tool pprof -http=localhost:8090 pprof/$(latest)
-
-# DBに接続する
-.PHONY: access-db
-access-db:
-	mysql -h $(MYSQL_HOST) -P $(MYSQL_PORT) -u $(MYSQL_USER) -p$(MYSQL_PASS) $(MYSQL_DBNAME)
-
-# 主要コマンドの構成要素 ------------------------
-
-.PHONY: install-tools
-install-tools:
-	sudo apt update
-	sudo apt upgrade
-	sudo apt install -y percona-toolkit dstat git unzip snapd graphviz tree
-
-	# alpのインストール
-	wget https://github.com/tkuchiki/alp/releases/download/v1.0.9/alp_linux_amd64.zip
-	unzip alp_linux_amd64.zip
-	sudo install alp /usr/local/bin/alp
-	rm alp_linux_amd64.zip alp
-
-.PHONY: git-setup
-git-setup:
-	# git用の設定は適宜変更して良い
-	git config --global user.email "isucon@example.com"
-	git config --global user.name "isucon"
-
-	# deploykeyの作成
-	ssh-keygen -t ed25519
-
 .PHONY: check-server-id
 check-server-id:
-ifdef SERVER_ID
-	@echo "SERVER_ID=$(SERVER_ID)"
-else
-	@echo "SERVER_ID is unset"
-	@exit 1
-endif
+	@echo $(shell pwd)
+	@echo "SERVER=${SERVER}"
 
-.PHONY: set-as-s1
-set-as-s1:
-	echo "SERVER_ID=s1" >> env.sh
+get-all: check-server-id get-service-file get-envsh get-nginx-conf get-db-conf get-hosts-file get-app-source get-sql-init
 
-.PHONY: set-as-s2
-set-as-s2:
-	echo "SERVER_ID=s2" >> env.sh
-
-.PHONY: set-as-s3
-set-as-s3:
-	echo "SERVER_ID=s3" >> env.sh
-
-
-.PHONY: get-envsh
 get-envsh:
-	cp ~/env.sh ~/$(SERVER_ID)/home/isucon/env.sh
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${FILE_ENV} ./env.sh
+
+get-db-conf:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_DB}/* ${OUTPUT_PATH}/mysql
+
+get-nginx-conf:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_NGINX}/* ./nginx
+
+get-service-file:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SYSTEMD}/* ./systemd
+
+get-hosts-file:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:/etc/hosts ./
+
+get-app-source:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_APP}/* ${OUTPUT_PATH}/webapp/go
+
+get-sql-init:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SQL_INIT}/* ${OUTPUT_PATH}/webapp/sql
 
 
-.PHONY: deploy-envsh
+deploy-all: check-server-id deploy-service-file deploy-envsh deploy-nginx-conf deploy-db-conf deploy-hosts-file deploy-app-source deploy-sql-init
+
+
 deploy-envsh:
-	cp ~/$(SERVER_ID)/home/isucon/env.sh ~/env.sh
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync"  ./env.sh ${SERVER}:${FILE_ENV}
 
-.PHONY: build
-build:
-	cd $(BUILD_DIR); \
-	go build -o $(BIN_NAME)
+deploy-db-conf:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/mysql/* ${SERVER}:${DIR_DB} 
+
+deploy-nginx-conf:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./nginx/* ${SERVER}:${DIR_NGINX}
+
+deploy-service-file:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./systemd/* ${SERVER}:${DIR_SYSTEMD}
+
+deploy-hosts-file:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./hosts ${SERVER}:/etc/hosts 
+
+deploy-app-source:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/app/* ${SERVER}:${DIR_APP}
+
+deploy-sql-init:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/sql_init/* ${SERVER}:${DIR_SQL_INIT}
+
+
+########## UTILITY ##########
 
 .PHONY: restart
 restart:
-	sudo systemctl daemon-reload
-	sudo systemctl restart $(SERVICE_NAME)
-	sudo systemctl restart mysql
-	sudo systemctl restart nginx
-
-.PHONY: mv-logs
-mv-logs:
-	$(eval when := $(shell date "+%s"))
-	mkdir -p ~/logs/$(when)
-	sudo test -f $(NGINX_LOG) && \
-		sudo mv -f $(NGINX_LOG) ~/logs/nginx/$(when)/ || echo ""
-	sudo test -f $(DB_SLOW_LOG) && \
-		sudo mv -f $(DB_SLOW_LOG) ~/logs/mysql/$(when)/ || echo ""
-
-.PHONY: watch-service-log
-watch-service-log:
-	sudo journalctl -u $(SERVICE_NAME) -n10 -f
+	ssh -p ${PORT} ${SERVER} '\
+	sudo systemctl daemon-reload && \
+	sudo systemctl restart $(NAME_SERVICE) && \
+	sudo systemctl restart mysql && \
+	sudo systemctl restart nginx \
+	'
