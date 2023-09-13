@@ -1,7 +1,0 @@
-USER:=ubuntu
-IP:=123.456.789
-KEY_FILE:=~/.ssh/hoge
-PORT:=22
-
-BENCH_IP:=123.456.789
-

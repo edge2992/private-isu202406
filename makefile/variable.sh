@@ -1,0 +1,7 @@
+USER:=isucon
+IP:=192.168.11.8
+KEY_FILE:=~/.ssh/hoge
+PORT:=22
+
+BENCH_IP:=192.168.11.9
+

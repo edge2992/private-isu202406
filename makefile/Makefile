@@ -21,7 +21,7 @@ SERVER:=${USER}@${IP}
 # time:=${shell date '+%H%M_%S'}
 # 年_月日_時分_秒
 time:=${shell date '+%y_%m%d_%H%M_%S'}
-OUTPUT_PATH:=../
+OUTPUT_PATH:=..
 
 
 access-db:
@@ -55,7 +55,7 @@ get-conf: get-all
 # ベンチマークを走らせる直前に実行する
 # ビルド、デプロイ、ログ初期化, リスタート
 .PHONY: before-bench
-before-bench:  rm-logs app-build deploy-all restart
+before-bench: app-build rm-logs  deploy-all restart
 
 # ベンチを走らせた後に実行する
 # ログの取得, 解析
@@ -67,8 +67,8 @@ bench-ssh:
 	ssh -A -p ${PORT} -X ${USER}@${BENCH_IP}
 
 bench-port:
-	eval $$(ssh-agent) && \
-	find ~/.ssh/ -type f -exec grep -l "PRIVATE" {} \; | xargs ssh-add && \
+	# eval $$(ssh-agent)
+	# find ~/.ssh/ -type f -exec grep -l "PRIVATE" {} \; | xargs ssh-add
 	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
 		ssh-add -l && \
 		ssh -oStrictHostKeyChecking=no -R 4999:localhost:4999 -4 isucon@${IP} \
@@ -99,7 +99,7 @@ bench:
 
 ########## APP ##########
 app-build:
-	cd ${OUTPUT_PATH}/app && CGO_ENABLED=0 go build -o ${shell basename ${FILE_APP_BIN}} main.go
+	cd ${OUTPUT_PATH}/webapp/go && CGO_ENABLED=0 go build -o ${shell basename ${FILE_APP_BIN}} main.go
 
 app-log:
 	ssh -p ${PORT} ${SERVER} '\
@@ -189,9 +189,11 @@ get-hosts-file:
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:/etc/hosts ./
 
 get-app-source:
+	mkdir -p ${OUTPUT_PATH}/webapp/
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_APP}/* ${OUTPUT_PATH}/webapp/go
 
 get-sql-init:
+	mkdir -p ${OUTPUT_PATH}/webapp/
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SQL_INIT}/* ${OUTPUT_PATH}/webapp/sql
 
 
@@ -214,10 +216,10 @@ deploy-hosts-file:
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./hosts ${SERVER}:/etc/hosts 
 
 deploy-app-source:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/app/* ${SERVER}:${DIR_APP}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/webapp/go/* ${SERVER}:${DIR_APP}
 
 deploy-sql-init:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/sql_init/* ${SERVER}:${DIR_SQL_INIT}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/webapp/sql/* ${SERVER}:${DIR_SQL_INIT}
 
 
 ########## UTILITY ##########
