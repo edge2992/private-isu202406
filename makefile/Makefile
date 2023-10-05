@@ -153,7 +153,7 @@ setup-directory:
 setup-local:
 	sudo apt update
 	sudo apt install -y unzip
-	cd /tmp && wget https://github.com/tkuchiki/alp/releases/download/v1.0.8/alp_linux_amd64.zip
+	cd /tmp && wget https://github.com/tkuchiki/alp/releases/download/v1.0.21/alp_linux_amd64.zip
 	unzip -o /tmp/alp_linux_amd64.zip -d /tmp
 	sudo install /tmp/alp /usr/local/bin/alp
 
