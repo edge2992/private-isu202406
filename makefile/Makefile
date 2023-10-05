@@ -119,10 +119,17 @@ rm-logs:
 		sudo rm -f /var/log/mysql/mysql-slow.log \
 	'
 
-latest_log=$(shell ls access_log 2> /dev/null | sort -r | head -n 1)
+latest_log=$(shell basename `ls access_log 2> /dev/null | sort -r | head -n 1` .log)
+latest_log2=$(shell basename `ls access_log 2> /dev/null | sort -r | sed -n '2p'` .log)
 nginx-alp:
-	mkdir -p ./access_log_alp
-	alp json --file=access_log/${latest_log} --config=../makefile/alp.config.yml | tee access_log_alp/${latest_log}
+	        mkdir -p ./access_log_alp
+		alp json --file=access_log/${latest_log}.log --config=../makefile/alp.config.yml | tee access_log_alp/${latest_log}.log
+
+nginx-alp-diff:
+	        alp json --file=access_log/${latest_log}.log --dump /tmp/${latest_log}.yaml --config=../makefile/alp.config.yml > /dev/null
+		alp json --file=access_log/${latest_log2}.log --dump /tmp/${latest_log2}.yaml --config=../makefile/alp.config.yml > /dev/null
+		alp diff /tmp/${latest_log}.yaml /tmp/${latest_log2}.yaml --config=../makefile/alp.config.yml
+
 
 ########## SQL ##########
 sql-all: sql-record sql-pull
