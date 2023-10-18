@@ -1,6 +1,7 @@
 # 環境変数
 include variable.sh
 
+# ディレクトリの場合は/を忘れない!
 # 環境によって変わる変数
 DIR_DB:=/etc/mysql
 DIR_NGINX:=/etc/nginx
@@ -11,8 +12,8 @@ FILE_APP_BIN:=/home/isucon/webapp/go/isucondition
 FILE_ENV:=/home/isucon/env.sh
 FILE_SERVICE:=/etc/systemd/system/isucondition.go.service
 
-DIR_APP:=${shell dirname ${FILE_APP_BIN}}
-DIR_SYSTEMD:=${shell dirname ${FILE_SERVICE}}
+DIR_APP:=${shell dirname ${FILE_APP_BIN}}/
+DIR_SYSTEMD:=${shell dirname ${FILE_SERVICE}}/
 NAME_SERVICE:=${shell basename ${FILE_SERVICE}}
 
 # 定数
@@ -25,10 +26,10 @@ OUTPUT_PATH:=..
 
 
 access-db:
-	ssh -p ${PORT} ${SERVER} -t  'mysql -h 127.0.0.1 -u isucon --password=isucon isucondition'
+	ssh -p ${PORT} ${SERVER} -t  'mysql -h 127.0.0.1 -u isucari --password=isucari isucari'
 
 ssh:
-	ssh -p ${PORT} -X ${SERVER} 
+	ssh -A -p ${PORT} -X ${SERVER} 
 
 ssh-port:
 	ssh -p ${PORT} -L 19999:localhost:19999 -L 6060:localhost:6060 -L 1080:localhost:1080 -L 5000:127.0.0.1:5000 ${SERVER}
@@ -40,7 +41,8 @@ IP_INIT ?= ${IP}
 ssh-apply-auth:
 	ssh -i ${KEY_FILE} -p ${PORT} ${USER_INIT}@${IP_INIT} '\
 		for i in "kajikentaro" "edge2992" "methylpentane"; do \
-			sudo -Su ${USER} bash -c "curl https://github.com/$$i.keys >> ~/.ssh/authorized_keys" ; \
+			sudo -HSu ${USER} bash -c "mkdir -p ~/.ssh" ; \
+			sudo -HSu ${USER} bash -c "curl https://github.com/$$i.keys >> ~/.ssh/authorized_keys" ; \
 			curl https://github.com/$$i.keys >> ~/.ssh/authorized_keys ; \
 		done \
 	'
@@ -74,28 +76,32 @@ bench-port:
 		ssh -oStrictHostKeyChecking=no -R 4999:localhost:4999 -4 isucon@${IP} \
 	'
 
-.PHONY: pprof-record
-pprof-record:
-	$(eval PPROF_TMPDIR := $(shell pwd)/$(SERVER_ID)/pprof)
-	@echo ${PPROF_TMPDIR}
-	@mkdir -p ${PPROF_TMPDIR}
-	PPROF_TMPDIR=${PPROF_TMPDIR} \
-		go tool pprof https://isucondition-1.t.isucon.dev/debug/pprof/profile?seconds=30
-
-.PHONY: pprof-check
-pprof-check:
-	$(eval PPROF_TMPDIR := $(shell pwd)/$(SERVER_ID)/pprof)
-	$(eval latest := $(shell ls -rt $(PPROF_TMPDIR) | tail -n 1))
-	go tool pprof -http=localhost:8090 $(PPROF_TMPDIR)/$(latest)
-
-# isucon-11q for ansibleは、裏で
-#   make bench-port
-# を実行する必要がある
+# isucon-11q for ansibleは裏でmake bench-portを実行する必要がある
 bench:
 	mkdir -p bench_result
 	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
-		cd /home/isucon/bench && ./bench -all-addresses ${IP} -target ${IP}:443 -tls -jia-service-url http://127.0.0.1:4999 2> /dev/null \
+		cd /home/isucon/isuumo/bench; \
+		./bench --target-url http://${IP} --data-dir ../initial-data --fixture-dir ../webapp/fixture \
 	' | tee bench_result/${time}.log
+
+setup-bench:
+	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
+		/home/isucon/isuumo/bench \
+		/home/isucon/isuumo/bench \
+	' | tee bench_result/${time}.log
+
+
+########## pprof ##########
+PPROF_OUTPUT:=./pprof
+.PHONY: pprof-record
+pprof-record:
+	mkdir -p ${PPROF_OUTPUT}
+	PPROF_OUTPUT=${PPROF_OUTPUT} go tool pprof http://${IP}:6060/debug/pprof/profile?seconds=75
+
+.PHONY: pprof-check
+pprof-check:
+	$(eval latest := $(shell ls -rt $(PPROF_DIR) | tail -n 1))
+	go tool pprof -http=localhost:8090 $(PPROF_DIR)/$(latest)
 
 ########## APP ##########
 app-build:
@@ -122,13 +128,13 @@ rm-logs:
 latest_log=$(shell basename `ls access_log 2> /dev/null | sort -r | head -n 1` .log)
 latest_log2=$(shell basename `ls access_log 2> /dev/null | sort -r | sed -n '2p'` .log)
 nginx-alp:
-	        mkdir -p ./access_log_alp
-		alp json --file=access_log/${latest_log}.log --config=../makefile/alp.config.yml | tee access_log_alp/${latest_log}.log
+		mkdir -p ./access_log_alp
+		alp json --file=access_log/${latest_log}.log --config=../s-template/alp.config.yml | tee access_log_alp/${latest_log}.log
 
 nginx-alp-diff:
-	        alp json --file=access_log/${latest_log}.log --dump /tmp/${latest_log}.yaml --config=../makefile/alp.config.yml > /dev/null
-		alp json --file=access_log/${latest_log2}.log --dump /tmp/${latest_log2}.yaml --config=../makefile/alp.config.yml > /dev/null
-		alp diff /tmp/${latest_log}.yaml /tmp/${latest_log2}.yaml --config=../makefile/alp.config.yml
+		alp json --file=access_log/${latest_log}.log --dump /tmp/${latest_log}.yaml --config=../s-template/alp.config.yml > /dev/null
+		alp json --file=access_log/${latest_log2}.log --dump /tmp/${latest_log2}.yaml --config=../s-template/alp.config.yml > /dev/null
+		alp diff /tmp/${latest_log}.yaml /tmp/${latest_log2}.yaml --config=../s-template/alp.config.yml
 
 
 ########## SQL ##########
@@ -178,55 +184,69 @@ check-server-id:
 	@echo $(shell pwd)
 	@echo "SERVER=${SERVER}"
 
+# Do not forget / at the end
+OUTPUT_PATH_ENVSH:=./env.sh
+OUTPUT_PATH_DB_CONF:=${OUTPUT_PATH}/mysql/
+OUTPUT_PATH_NGINX_CONF:=./mysql/
+OUTPUT_PATH_SERVICE_FILE:=./systemd/
+OUTPUT_PATH_HOSTS_FILE:=./hosts
+OUTPUT_PATH_APP_SOURCE:=${OUTPUT_PATH}/webapp/go/
+OUTPUT_PATH_SQL_INIT:=${OUTPUT_PATH}/webapp/sql/
+
 get-all: check-server-id get-service-file get-envsh get-nginx-conf get-db-conf get-hosts-file get-app-source get-sql-init
 
 get-envsh:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${FILE_ENV} ./env.sh
+	mkdir -p ${OUTPUT_PATH_ENVSH}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${FILE_ENV} ${OUTPUT_PATH_ENVSH}
 
 get-db-conf:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_DB}/* ${OUTPUT_PATH}/mysql
+	mkdir -p ${OUTPUT_PATH_DB_CONF}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_DB} ${OUTPUT_PATH_DB_CONF}
 
 get-nginx-conf:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_NGINX}/* ./nginx
+	mkdir -p ${OUTPUT_PATH_NGINX_CONF}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_NGINX} ${OUTPUT_PATH_NGINX_CONF}
 
 get-service-file:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SYSTEMD}/* ./systemd
+	mkdir -p ${OUTPUT_PATH_SERVICE_FILE}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SYSTEMD} ${OUTPUT_PATH_SERVICE_FILE}
 
 get-hosts-file:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:/etc/hosts ./
+	mkdir -p ${OUTPUT_PATH_HOSTS_FILE}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:/etc/hosts ${OUTPUT_PATH_HOSTS_FILE}
 
 get-app-source:
-	mkdir -p ${OUTPUT_PATH}/webapp/
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_APP}/* ${OUTPUT_PATH}/webapp/go
+	mkdir -p ${OUTPUT_PATH_APP_SOURCE}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_APP} ${OUTPUT_PATH_APP_SOURCE}
 
 get-sql-init:
-	mkdir -p ${OUTPUT_PATH}/webapp/
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SQL_INIT}/* ${OUTPUT_PATH}/webapp/sql
+	mkdir -p ${OUTPUT_PATH_SQL_INIT}
+	rsync -P -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SQL_INIT}/* ${OUTPUT_PATH_SQL_INIT}
 
 
 deploy-all: check-server-id deploy-service-file deploy-envsh deploy-nginx-conf deploy-db-conf deploy-hosts-file deploy-app-source deploy-sql-init
 
 
 deploy-envsh:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync"  ./env.sh ${SERVER}:${FILE_ENV}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync"  ${OUTPUT_PATH_ENVSH} ${SERVER}:${FILE_ENV}
 
 deploy-db-conf:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/mysql/* ${SERVER}:${DIR_DB} 
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_DB_CONF} ${SERVER}:${DIR_DB} 
 
 deploy-nginx-conf:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./nginx/* ${SERVER}:${DIR_NGINX}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_NGINX_CONF} ${SERVER}:${DIR_NGINX}
 
 deploy-service-file:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./systemd/* ${SERVER}:${DIR_SYSTEMD}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_SERVICE_FILE} ${SERVER}:${DIR_SYSTEMD}
 
 deploy-hosts-file:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./hosts ${SERVER}:/etc/hosts 
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_HOSTS_FILE} ${SERVER}:/etc/hosts 
 
 deploy-app-source:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/webapp/go/* ${SERVER}:${DIR_APP}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_APP_SOURCE} ${SERVER}:${DIR_APP}
 
 deploy-sql-init:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH}/webapp/sql/* ${SERVER}:${DIR_SQL_INIT}
+	rsync -P -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_SQL_INIT} ${SERVER}:${DIR_SQL_INIT}
 
 
 ########## UTILITY ##########
