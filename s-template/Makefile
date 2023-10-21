@@ -18,6 +18,7 @@ NAME_SERVICE:=${shell basename ${FILE_SERVICE}}
 
 # 定数
 SERVER:=${USER}@${IP}
+SLACK_CHANNEL:=sample
 # 時刻のみ
 # time:=${shell date '+%H%M_%S'}
 # 年_月日_時分_秒
@@ -82,7 +83,7 @@ bench:
 	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
 		cd /home/isucon/isuumo/bench; \
 		./bench --target-url http://${IP} --data-dir ../initial-data --fixture-dir ../webapp/fixture \
-	' | tee bench_result/${time}.log
+	' | tee bench_result/${time}.log | slackcat --channel ${SLACK_CHANNEL} -tee 
 
 setup-bench:
 	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
@@ -129,12 +130,12 @@ latest_log=$(shell basename `ls access_log 2> /dev/null | sort -r | head -n 1` .
 latest_log2=$(shell basename `ls access_log 2> /dev/null | sort -r | sed -n '2p'` .log)
 nginx-alp:
 		mkdir -p ./access_log_alp
-		alp json --file=access_log/${latest_log}.log --config=../s-template/alp.config.yml | tee access_log_alp/${latest_log}.log
+		alp json --file=access_log/${latest_log}.log --config=../s-template/alp.config.yml | tee access_log_alp/${latest_log}.log | slackcat --channel ${SLACK_CHANNEL} -tee --filename alp
 
 nginx-alp-diff:
 		alp json --file=access_log/${latest_log}.log --dump /tmp/${latest_log}.yaml --config=../s-template/alp.config.yml > /dev/null
 		alp json --file=access_log/${latest_log2}.log --dump /tmp/${latest_log2}.yaml --config=../s-template/alp.config.yml > /dev/null
-		alp diff /tmp/${latest_log}.yaml /tmp/${latest_log2}.yaml --config=../s-template/alp.config.yml
+		alp diff /tmp/${latest_log}.yaml /tmp/${latest_log2}.yaml --config=../s-template/alp.config.yml | slackcat --channel ${SLACK_CHANNEL} -tee --filename alp-diff
 
 
 ########## SQL ##########
@@ -153,6 +154,7 @@ sql-pull:
 	'
 	mkdir -p ./query_digest
 	scp -P ${PORT} ${SERVER}:/tmp/${time}.digest ./query_digest/${time}.digest
+	head -n60 ./query_digest/${time}.digest | slackcat --channel ${SLACK_CHANNEL} -tee
 
 ########## SETUP ##########
 setup-all: setup-local setup-sql-query-digester
@@ -166,9 +168,17 @@ setup-directory:
 setup-local:
 	sudo apt update
 	sudo apt install -y unzip
+	# install alp
 	cd /tmp && wget https://github.com/tkuchiki/alp/releases/download/v1.0.21/alp_linux_amd64.zip
 	unzip -o /tmp/alp_linux_amd64.zip -d /tmp
 	sudo install /tmp/alp /usr/local/bin/alp
+	# install slackcat
+	cd /tmp && curl -Lo slackcat https://github.com/edge2992/slackcat/releases/download/1.7.4/slackcat-1.7.4-$(uname -s)-amd64
+	sudo install /tmp/slackcat /usr/local/bin/slackcat
+	mkdir -p ~/.config/slackcat && cp slackcat.config ~/.config/slackcat/config
+	# install git-crypt
+	sudo apt install -y git-crypt
+	git-crypt unlock
 
 setup-sql-query-digester:
 	ssh -p ${PORT} ${SERVER} '\
@@ -207,6 +217,10 @@ get-nginx-conf:
 	mkdir -p ${OUTPUT_PATH_NGINX_CONF}
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_NGINX} ${OUTPUT_PATH_NGINX_CONF}
 
+# not enable at first
+get-memcached-conf:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:/etc/memcached.conf ./etc/
+
 get-service-file:
 	mkdir -p ${OUTPUT_PATH_SERVICE_FILE}
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SYSTEMD} ${OUTPUT_PATH_SERVICE_FILE}
@@ -236,6 +250,10 @@ deploy-db-conf:
 deploy-nginx-conf:
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_NGINX_CONF} ${SERVER}:${DIR_NGINX}
 
+# not enable at first
+deploy-memcached-conf:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./etc/memcached.conf ${SERVER}:/etc/memcached.conf
+
 deploy-service-file:
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_SERVICE_FILE} ${SERVER}:${DIR_SYSTEMD}
 
@@ -258,4 +276,10 @@ restart:
 	sudo systemctl restart $(NAME_SERVICE) && \
 	sudo systemctl restart mysql && \
 	sudo systemctl restart nginx \
+	'
+
+.PHONY: restart-memcached
+restart-memcached:
+	ssh -p ${PORT} ${SERVER} '\
+	sudo systemctl restart memcached \
 	'
