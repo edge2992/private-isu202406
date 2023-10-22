@@ -175,10 +175,10 @@ setup-local:
 	# install slackcat
 	cd /tmp && curl -Lo slackcat https://github.com/edge2992/slackcat/releases/download/1.7.4/slackcat-1.7.4-$(uname -s)-amd64
 	sudo install /tmp/slackcat /usr/local/bin/slackcat
-	mkdir -p ~/.config/slackcat && cp slackcat.config ~/.config/slackcat/config
-	# install git-crypt
-	sudo apt install -y git-crypt
-	git-crypt unlock
+	# mkdir -p ~/.config/slackcat && cp slackcat.config ~/.config/slackcat/config
+	# # install git-crypt
+	# sudo apt install -y git-crypt
+	# git-crypt unlock
 
 setup-sql-query-digester:
 	ssh -p ${PORT} ${SERVER} '\
