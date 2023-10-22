@@ -173,7 +173,7 @@ setup-local:
 	unzip -o /tmp/alp_linux_amd64.zip -d /tmp
 	sudo install /tmp/alp /usr/local/bin/alp
 	# install slackcat
-	cd /tmp && curl -Lo slackcat https://github.com/edge2992/slackcat/releases/download/1.7.4/slackcat-1.7.4-$(uname -s)-amd64
+	cd /tmp && curl -Lo slackcat https://github.com/edge2992/slackcat/releases/download/1.7.4/slackcat-1.7.4-linux-amd64
 	sudo install /tmp/slackcat /usr/local/bin/slackcat
 	# mkdir -p ~/.config/slackcat && cp slackcat.config ~/.config/slackcat/config
 	# # install git-crypt
