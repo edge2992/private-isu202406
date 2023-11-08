@@ -195,13 +195,15 @@ check-server-id:
 	@echo "SERVER=${SERVER}"
 
 # Do not forget / at the end
-OUTPUT_PATH_ENVSH:=./env.sh
+OUTPUT_PATH_ENVSH:=${OUTPUT_PATH}/env.sh
 OUTPUT_PATH_DB_CONF:=${OUTPUT_PATH}/mysql/
-OUTPUT_PATH_NGINX_CONF:=./mysql/
-OUTPUT_PATH_SERVICE_FILE:=./systemd/
-OUTPUT_PATH_HOSTS_FILE:=./hosts
+OUTPUT_PATH_NGINX_CONF:=${OUTPUT_PATH}/nginx/
+OUTPUT_PATH_HOSTS_FILE:=${OUTPUT_PATH}/hosts
 OUTPUT_PATH_APP_SOURCE:=${OUTPUT_PATH}/webapp/go/
 OUTPUT_PATH_SQL_INIT:=${OUTPUT_PATH}/webapp/sql/
+OUTPUT_PATH_SERVICE_FILE:=${OUTPUT_PATH}/systemd/
+# a example to make settings unique for each server
+# OUTPUT_PATH_SERVICE_FILE:=./systemd/
 
 get-all: check-server-id get-service-file get-envsh get-nginx-conf get-db-conf get-hosts-file get-app-source get-sql-init
 
