@@ -3,10 +3,11 @@ include variable.sh
 
 # ディレクトリの場合は/を忘れない!
 # 環境によって変わる変数
-DIR_DB:=/etc/mysql
-DIR_NGINX:=/etc/nginx
+DIR_DB:=/etc/mysql/
+DIR_NGINX:=/etc/nginx/
 # /initializeのときに呼ばれるsqlがあるディレクトリ
-DIR_SQL_INIT:=/home/isucon/webapp/sql
+DIR_SQL_INIT:=/home/isucon/webapp/sql/
+DIR_LIB_SYSTEMD:=/lib/systemd/system/
 FILE_NGINX_LOG:=/var/log/nginx/access.log
 FILE_APP_BIN:=/home/isucon/webapp/go/isucondition
 FILE_ENV:=/home/isucon/env.sh
@@ -14,6 +15,8 @@ FILE_SERVICE:=/etc/systemd/system/isucondition.go.service
 
 DIR_APP:=${shell dirname ${FILE_APP_BIN}}/
 DIR_SYSTEMD:=${shell dirname ${FILE_SERVICE}}/
+NAME_APP_BIN:=${shell basename ${FILE_APP_BIN}}
+NAME_ENV:=${shell basename ${FILE_ENV}}
 NAME_SERVICE:=${shell basename ${FILE_SERVICE}}
 
 # 定数
@@ -27,13 +30,16 @@ OUTPUT_PATH:=..
 
 
 access-db:
-	ssh -p ${PORT} ${SERVER} -t  'mysql -h 127.0.0.1 -u isucari --password=isucari isucari'
+	ssh -p ${PORT} ${SERVER} -t  'mysql -h 127.0.0.1 -u isucon --password=isucon isupipe'
 
 ssh:
 	ssh -A -p ${PORT} -X ${SERVER} 
 
 ssh-port:
 	ssh -p ${PORT} -L 19999:localhost:19999 -L 6060:localhost:6060 -L 1080:localhost:1080 -L 5000:127.0.0.1:5000 ${SERVER}
+
+ssh-initialize:
+	ssh -p ${PORT} ${SERVER} -t 'curl -X POST http://localhost:8080/api/initialize'
 
 # ssh-apply-authのときのみ別のユーザーを指定できる
 # ex) USER_INIT=ubuntu IP_INIT=123.456.789 make ssh-apply-auth
@@ -195,78 +201,87 @@ check-server-id:
 	@echo "SERVER=${SERVER}"
 
 # Do not forget / at the end
-OUTPUT_PATH_ENVSH:=${OUTPUT_PATH}/env.sh
-OUTPUT_PATH_DB_CONF:=${OUTPUT_PATH}/mysql/
-OUTPUT_PATH_NGINX_CONF:=${OUTPUT_PATH}/nginx/
-OUTPUT_PATH_HOSTS_FILE:=${OUTPUT_PATH}/hosts
-OUTPUT_PATH_APP_SOURCE:=${OUTPUT_PATH}/webapp/go/
-OUTPUT_PATH_SQL_INIT:=${OUTPUT_PATH}/webapp/sql/
-OUTPUT_PATH_SERVICE_FILE:=${OUTPUT_PATH}/systemd/
+OUTPUT_DIR_ENV:=${OUTPUT_PATH}/
+OUTPUT_DIR_DB_CONF:=${OUTPUT_PATH}/mysql/
+OUTPUT_DIR_NGINX_CONF:=${OUTPUT_PATH}/nginx/
+OUTPUT_DIR_HOSTS_FILE:=${OUTPUT_PATH}/
+OUTPUT_DIR_APP_SOURCE:=${OUTPUT_PATH}/webapp/go/
+OUTPUT_DIR_SQL_INIT:=${OUTPUT_PATH}/webapp/sql/
+OUTPUT_DIR_LIB_SERVICE_FILE:=${OUTPUT_PATH}/lib-systemd/
+OUTPUT_DIR_SERVICE_FILE:=${OUTPUT_PATH}/systemd/
 # a example to make settings unique for each server
-# OUTPUT_PATH_SERVICE_FILE:=./systemd/
+# OUTPUT_DIR_SERVICE_FILE:=./systemd/
 
-get-all: check-server-id get-service-file get-envsh get-nginx-conf get-db-conf get-hosts-file get-app-source get-sql-init
+get-all: check-server-id get-service-file get-lib-service-file get-envsh get-nginx-conf get-db-conf get-hosts-file get-app-source get-sql-init
 
 get-envsh:
-	mkdir -p ${OUTPUT_PATH_ENVSH}
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${FILE_ENV} ${OUTPUT_PATH_ENVSH}
+	mkdir -p ${OUTPUT_DIR_ENV}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${FILE_ENV} ${OUTPUT_DIR_ENV}
 
 get-db-conf:
-	mkdir -p ${OUTPUT_PATH_DB_CONF}
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_DB} ${OUTPUT_PATH_DB_CONF}
+	mkdir -p ${OUTPUT_DIR_DB_CONF}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_DB} ${OUTPUT_DIR_DB_CONF}
 
 get-nginx-conf:
-	mkdir -p ${OUTPUT_PATH_NGINX_CONF}
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_NGINX} ${OUTPUT_PATH_NGINX_CONF}
+	mkdir -p ${OUTPUT_DIR_NGINX_CONF}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_NGINX} ${OUTPUT_DIR_NGINX_CONF}
 
 # not enable at first
 get-memcached-conf:
+	mkdir -p ${OUTPUT_DIR_ENV}
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:/etc/memcached.conf ./etc/
 
 get-service-file:
-	mkdir -p ${OUTPUT_PATH_SERVICE_FILE}
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SYSTEMD} ${OUTPUT_PATH_SERVICE_FILE}
+	mkdir -p ${OUTPUT_DIR_SERVICE_FILE}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SYSTEMD} ${OUTPUT_DIR_SERVICE_FILE}
+
+get-lib-service-file:
+	mkdir -p ${OUTPUT_DIR_LIB_SERVICE_FILE}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_LIB_SYSTEMD} ${OUTPUT_DIR_LIB_SERVICE_FILE}
 
 get-hosts-file:
-	mkdir -p ${OUTPUT_PATH_HOSTS_FILE}
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:/etc/hosts ${OUTPUT_PATH_HOSTS_FILE}
+	mkdir -p ${OUTPUT_DIR_HOSTS_FILE}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:/etc/hosts ${OUTPUT_DIR_HOSTS_FILE}
 
 get-app-source:
-	mkdir -p ${OUTPUT_PATH_APP_SOURCE}
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_APP} ${OUTPUT_PATH_APP_SOURCE}
+	mkdir -p ${OUTPUT_DIR_APP_SOURCE}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_APP} ${OUTPUT_DIR_APP_SOURCE}
 
 get-sql-init:
-	mkdir -p ${OUTPUT_PATH_SQL_INIT}
-	rsync -P -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SQL_INIT}/* ${OUTPUT_PATH_SQL_INIT}
+	mkdir -p ${OUTPUT_DIR_SQL_INIT}
+	rsync -P -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SQL_INIT}/* ${OUTPUT_DIR_SQL_INIT}
 
 
-deploy-all: check-server-id deploy-service-file deploy-envsh deploy-nginx-conf deploy-db-conf deploy-hosts-file deploy-app-source deploy-sql-init
+deploy-all: check-server-id deploy-service-file deploy-lib-service-file deploy-envsh deploy-nginx-conf deploy-db-conf deploy-hosts-file deploy-app-source deploy-sql-init
 
 
 deploy-envsh:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync"  ${OUTPUT_PATH_ENVSH} ${SERVER}:${FILE_ENV}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync"  ${OUTPUT_DIR_ENV}${NAME_ENV} ${SERVER}:${FILE_ENV}
 
 deploy-db-conf:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_DB_CONF} ${SERVER}:${DIR_DB} 
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_DIR_DB_CONF} ${SERVER}:${DIR_DB} 
 
 deploy-nginx-conf:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_NGINX_CONF} ${SERVER}:${DIR_NGINX}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_DIR_NGINX_CONF} ${SERVER}:${DIR_NGINX}
 
 # not enable at first
 deploy-memcached-conf:
 	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ./etc/memcached.conf ${SERVER}:/etc/memcached.conf
 
 deploy-service-file:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_SERVICE_FILE} ${SERVER}:${DIR_SYSTEMD}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_DIR_SERVICE_FILE} ${SERVER}:${DIR_SYSTEMD}
+
+deploy-lib-service-file:
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_DIR_LIB_SERVICE_FILE} ${SERVER}:${DIR_LIB_SYSTEMD}
 
 deploy-hosts-file:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_HOSTS_FILE} ${SERVER}:/etc/hosts 
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_DIR_HOSTS_FILE}/hosts ${SERVER}:/etc/hosts 
 
 deploy-app-source:
-	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_APP_SOURCE} ${SERVER}:${DIR_APP}
+	rsync -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_DIR_APP_SOURCE} ${SERVER}:${DIR_APP}
 
 deploy-sql-init:
-	rsync -P -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_PATH_SQL_INIT} ${SERVER}:${DIR_SQL_INIT}
+	rsync -P -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${OUTPUT_DIR_SQL_INIT} ${SERVER}:${DIR_SQL_INIT}
 
 
 ########## UTILITY ##########
