@@ -9,9 +9,9 @@ DIR_NGINX:=/etc/nginx/
 DIR_SQL_INIT:=/home/isucon/webapp/sql/
 DIR_LIB_SYSTEMD:=/lib/systemd/system/
 FILE_NGINX_LOG:=/var/log/nginx/access.log
-FILE_APP_BIN:=/home/isucon/webapp/go/isucondition
+FILE_APP_BIN:=/home/isucon/private_isu/webapp/golang/app
 FILE_ENV:=/home/isucon/env.sh
-FILE_SERVICE:=/etc/systemd/system/isucondition.go.service
+FILE_SERVICE:=/etc/systemd/system/isu-go.service
 
 DIR_APP:=${shell dirname ${FILE_APP_BIN}}/
 DIR_SYSTEMD:=${shell dirname ${FILE_SERVICE}}/
@@ -212,7 +212,8 @@ OUTPUT_DIR_SERVICE_FILE:=${OUTPUT_PATH}/systemd/
 # a example to make settings unique for each server
 # OUTPUT_DIR_SERVICE_FILE:=./systemd/
 
-get-all: check-server-id get-service-file get-lib-service-file get-envsh get-nginx-conf get-db-conf get-hosts-file get-app-source get-sql-init
+get-all: check-server-id get-service-file get-lib-service-file get-envsh get-nginx-conf get-db-conf get-hosts-file get-app-source 
+	# get-sql-init
 
 get-envsh:
 	mkdir -p ${OUTPUT_DIR_ENV}
