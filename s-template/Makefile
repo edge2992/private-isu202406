@@ -87,9 +87,10 @@ bench-port:
 bench:
 	mkdir -p bench_result
 	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
-		cd /home/isucon/isuumo/bench; \
-		./bench --target-url http://${IP} --data-dir ../initial-data --fixture-dir ../webapp/fixture \
+		cd /home/isucon/private_isu.git/benchmarker/bin; \
+		./benchmarker -u /home/isucon/private_isu.git/benchmarker/userdata -t http://${IP} \
 	' | tee bench_result/${time}.log | slackcat --channel ${SLACK_CHANNEL} -tee 
+
 
 setup-bench:
 	ssh -A -p ${PORT} ${USER}@${BENCH_IP} '\
