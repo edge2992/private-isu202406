@@ -253,7 +253,8 @@ get-sql-init:
 	rsync -P -a --delete -e "ssh -p ${PORT}" --rsync-path="sudo rsync" ${SERVER}:${DIR_SQL_INIT}/* ${OUTPUT_DIR_SQL_INIT}
 
 
-deploy-all: check-server-id deploy-service-file deploy-lib-service-file deploy-envsh deploy-nginx-conf deploy-db-conf deploy-hosts-file deploy-app-source deploy-sql-init
+deploy-all: check-server-id deploy-service-file deploy-lib-service-file deploy-envsh deploy-nginx-conf deploy-db-conf deploy-hosts-file deploy-app-source 
+	# deploy-sql-init
 
 
 deploy-envsh:
