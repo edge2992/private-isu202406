@@ -30,7 +30,7 @@ OUTPUT_PATH:=..
 
 
 access-db:
-	ssh -p ${PORT} ${SERVER} -t  'mysql -h 127.0.0.1 -u isucon --password=isucon isupipe'
+	ssh -p ${PORT} ${SERVER} -t  'mysql -h 127.0.0.1 -u isuconp --password=isuconp isuconp'
 
 ssh:
 	ssh -A -p ${PORT} -X ${SERVER} 
@@ -113,7 +113,7 @@ pprof-check:
 
 ########## APP ##########
 app-build:
-	cd ${OUTPUT_PATH}/webapp/go && CGO_ENABLED=0 go build -o ${shell basename ${FILE_APP_BIN}} main.go
+	cd ${OUTPUT_PATH}/webapp/go && CGO_ENABLED=0 go build -o ${shell basename ${FILE_APP_BIN}} app.go
 
 app-log:
 	ssh -p ${PORT} ${SERVER} '\

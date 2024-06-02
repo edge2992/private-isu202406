@@ -5,12 +5,11 @@ query_string: true # boolean
 output: count,5xx,4xx,2xx,method,uri,min,max,sum,avg,p90 # string(comma separated)
 
 matching_groups: # array
-  - "/api/condition/.{8}-.{4}-.{4}-.{4}-.{12}"
-  - "/api/isu/.{8}-.{4}-.{4}-.{4}-.{12}/icon"
-  - '/api/isu/.{8}-.{4}-.{4}-.{4}-.{12}/graph\?'
-  - "/api/isu/.{8}-.{4}-.{4}-.{4}-.{12}"
-  - "/isu/.{8}-.{4}-.{4}-.{4}-.{12}"
-  - '/\?jwt='
+  - /image/\d+
+  - /posts/[0-9]+
+  - /posts\?max_created_at=.+
+  - /@\w+
+  - /\?jwt=
 # file:                       # string
 # query_string_ignore_values: # boolean
 # decode_uri:                 # boolean
